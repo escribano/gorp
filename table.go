@@ -214,6 +214,9 @@ func (t *TableMap) SqlForCreate(ifNotExists bool) string {
 			if col.isAutoIncr {
 				s.WriteString(fmt.Sprintf(" %s", dialect.AutoIncrStr()))
 			}
+			if col.DefaultValue != "" {
+				s.WriteString(fmt.Sprintf(" default %s", col.DefaultValue))
+			}
 
 			x++
 		}
@@ -243,5 +246,45 @@ func (t *TableMap) SqlForCreate(ifNotExists bool) string {
 	s.WriteString(") ")
 	s.WriteString(dialect.CreateTableSuffix())
 	s.WriteString(dialect.QuerySuffix())
+	return s.String()
+}
+
+// SqlForCreateTable gets a sequence of SQL commands that will create
+// the specified table and any associated schema
+func (t *TableMap) SqlForIndex(ifNotExists bool) string {
+	s := bytes.Buffer{}
+	//dialect := t.dbmap.Dialect
+	dialect := reflect.TypeOf(t.dbmap.Dialect)
+	for _, index := range t.indexes {
+
+		//s := bytes.Buffer{}
+		s.WriteString("create")
+		if index.Unique {
+			s.WriteString(" unique")
+		}
+		s.WriteString(" index")
+		if ifNotExists {
+			//	s.WriteString(dialect.IfTableNotExists(tableCreate, t.SchemaName, t.TableName))
+		} else {
+			//	s.WriteString(tableCreate)
+		}
+		s.WriteString(fmt.Sprintf(" %s on %s", index.IndexName, t.TableName))
+		if dname := dialect.Name(); dname == "PostgresDialect" && index.IndexType != "" {
+			s.WriteString(fmt.Sprintf(" %s %s", t.dbmap.Dialect.CreateIndexSuffix(), index.IndexType))
+		}
+		s.WriteString(" (")
+		for x, col := range index.columns {
+			if x > 0 {
+				s.WriteString(", ")
+			}
+			s.WriteString(t.dbmap.Dialect.QuoteField(col))
+		}
+		s.WriteString(")")
+
+		if dname := dialect.Name(); dname == "MySQLDialect" && index.IndexType != "" {
+			s.WriteString(fmt.Sprintf(" %s %s", t.dbmap.Dialect.CreateIndexSuffix(), index.IndexType))
+		}
+		s.WriteString(";")
+	}
 	return s.String()
 }

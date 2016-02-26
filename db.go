@@ -126,12 +126,19 @@ func (m *DbMap) AddTableWithName(i interface{}, name string) *TableMap {
 	return m.AddTableWithNameAndSchema(i, "", name)
 }
 
+// AddTableWithSchema has the same behavior as AddTable, but sets
+// table.SchemaName to schema.
+func (m *DbMap) AddTableWithSchema(i interface{}, schema string) *TableMap {
+	return m.AddTableWithNameAndSchema(i, schema, "")
+}
+
 // AddTableWithNameAndSchema has the same behavior as AddTable, but sets
 // table.TableName to name.
 func (m *DbMap) AddTableWithNameAndSchema(i interface{}, schema string, name string) *TableMap {
 	t := reflect.TypeOf(i)
 	if name == "" {
-		name = t.Name()
+		//name = t.Name()
+		name = CamelToSnake(t.Name())
 	}
 
 	// check if we have a table for this type already
@@ -189,6 +196,7 @@ func (m *DbMap) readStructColumns(t reflect.Type) (cols []*ColumnMap, primaryKey
 			var defaultValue string
 			var isAuto bool
 			var isPK bool
+			var isUnique bool
 			for _, argString := range cArguments[1:] {
 				argString = strings.TrimSpace(argString)
 				arg := strings.SplitN(argString, ":", 2)
@@ -212,16 +220,19 @@ func (m *DbMap) readStructColumns(t reflect.Type) (cols []*ColumnMap, primaryKey
 					maxSize, _ = strconv.Atoi(arg[1])
 				case "default":
 					defaultValue = arg[1]
+					//fmt.Println(defaultValue)
 				case "primarykey":
 					isPK = true
 				case "autoincrement":
 					isAuto = true
+				case "unique":
+					isUnique = true
 				default:
 					panic(fmt.Sprintf("Unrecognized tag option for field %v: %v", f.Name, arg))
 				}
 			}
 			if columnName == "" {
-				columnName = f.Name
+				columnName = CamelToSnake(f.Name)
 			}
 
 			gotype := f.Type
@@ -251,6 +262,18 @@ func (m *DbMap) readStructColumns(t reflect.Type) (cols []*ColumnMap, primaryKey
 					gotype = reflect.TypeOf(v)
 				}
 			}
+			//fmt.Printf("gotype: %v kind %v name %v\n", gotype, gotype.Kind(), gotype.Name())
+
+			//switch gotype {
+			//case sql.NullString, sql.NullInt64, sql.NullFloat64, sql.NullBool, sql.NullTime:
+			//	isNotNull = true
+			//	fmt.PrintLn(isNotNull)
+			//case reflect.Slice:
+			//	if val.Elem().Kind() == reflect.Uint8 {
+			//		//return "bytea"
+			//	}
+			//}
+
 			cm := &ColumnMap{
 				ColumnName:   columnName,
 				DefaultValue: defaultValue,
@@ -259,11 +282,19 @@ func (m *DbMap) readStructColumns(t reflect.Type) (cols []*ColumnMap, primaryKey
 				gotype:       gotype,
 				isPK:         isPK,
 				isAutoIncr:   isAuto,
+				Unique:       isUnique,
 				MaxSize:      maxSize,
 			}
 			if isPK {
 				primaryKey = append(primaryKey, cm)
 			}
+
+			cm.SetNotNull(true)
+			switch gotype.Name() {
+			case "NullString", "NullInt64", "NullFloat64", "NullBool", "NullTime":
+				cm.SetNotNull(false)
+			}
+
 			// Check for nested fields of the same field name and
 			// override them.
 			shouldAppend := true
